@@ -1,1 +1,46 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
+html {
+  /* Safe area für iPhone Notch / Dynamic Island */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+body {
+  font-family: "Nunito", sans-serif;
+  background: #F5F7FA;
+  color: #2D3748;
+  min-height: 100dvh;         /* dvh = dynamic viewport height (iOS Safari fix) */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;  /* kein Bounce-Scroll auf iOS */
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar dezent */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E0E0E0; border-radius: 4px; }
+
+/* Tap-Highlight auf iOS entfernen */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Animationen */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes pop      { 0%{transform:scale(0.6);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+@keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes reveal   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+@keyframes slideUp  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+@keyframes checkIn  { from{stroke-dashoffset:40} to{stroke-dashoffset:0} }
+@keyframes confettiFall { to { transform:translateY(100vh) rotate(720deg); opacity:0; } }

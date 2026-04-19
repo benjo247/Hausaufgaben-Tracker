@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { searchSchools, insertManualSchool } from "../lib/supabase.js";
+import { searchSchools, insertManualSchool } from "../lib/api.js";
 import { getKursFaecher, getKlassen, SCHULARTEN_MAP, BUNDESLAENDER, SCHULART_EMOJI } from "../lib/schoolLogic.js";
 
 const T = {

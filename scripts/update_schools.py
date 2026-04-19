@@ -3,13 +3,7 @@
 update_schools.py
 -----------------
 Lädt die aktuelle Schuldaten-CSV von jedeschule.codefor.de
-und importiert sie per Upsert in Supabase.
-
-Manuelle Einträge (source='manual') werden nie überschrieben.
-
-Verwendung:
-  pip install requests supabase pandas
-  SUPABASE_URL=... SUPABASE_KEY=... python update_schools.py
+und importiert sie per Upsert in Neon PostgreSQL.
 """
 
 import os
@@ -18,7 +12,8 @@ import logging
 import requests
 import pandas as pd
 from io import StringIO
-from supabase import create_client, Client
+import psycopg2
+from psycopg2.extras import execute_values
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,28 +22,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ─── Config ──────────────────────────────────────────────────────────────────
 CSV_URL      = "https://jedeschule.codefor.de/csv-data/schools.csv"
-BATCH_SIZE   = 500          # Zeilen pro Upsert-Batch
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]   # service_role key!
+BATCH_SIZE   = 500
+DATABASE_URL = os.environ["DATABASE_URL"]
 
-# Mapping: jedeschule CSV-Spalte → unsere DB-Spalte
-# Passe an, sobald du die echte CSV-Struktur kennst.
-# jedeschule-Felder laut Scraper: id, name, address, zip, city, state, school_type, website, phone
-COLUMN_MAP = {
-    "id":          "id",
-    "name":        "name",
-    "address":     "address",
-    "zip":         "zip",
-    "city":        "city",
-    "state":       "state",
-    "school_type": "school_type",
-    "website":     "website",
-    "phone":       "phone",
-}
-
-# Bundesland-Kürzel → Vollname (falls die CSV Kürzel verwendet)
 STATE_MAP = {
     "BB": "Brandenburg",    "BE": "Berlin",
     "BW": "Baden-Württemberg", "BY": "Bayern",
@@ -60,60 +37,78 @@ STATE_MAP = {
     "ST": "Sachsen-Anhalt", "TH": "Thüringen",
 }
 
-# ─── Schritt 1: CSV laden ─────────────────────────────────────────────────────
-def download_csv() -> pd.DataFrame:
+def download_csv():
     log.info(f"Lade CSV von {CSV_URL} …")
     r = requests.get(CSV_URL, timeout=60)
     r.raise_for_status()
     df = pd.read_csv(StringIO(r.text), dtype=str)
     log.info(f"  → {len(df):,} Zeilen geladen")
+    log.info(f"  → Spalten: {list(df.columns)}")
     return df
 
-# ─── Schritt 2: Daten aufbereiten ────────────────────────────────────────────
-def transform(df: pd.DataFrame) -> list[dict]:
-    # Nur bekannte Spalten behalten
-    available = {c: COLUMN_MAP[c] for c in COLUMN_MAP if c in df.columns}
-    df = df[list(available.keys())].rename(columns=available)
+def transform(df):
+    # Spalten-Mapping (passe an wenn CSV andere Namen hat)
+    rename = {}
+    for col in df.columns:
+        lower = col.lower()
+        if lower in ["id"]:           rename[col] = "id"
+        elif lower in ["name"]:       rename[col] = "name"
+        elif lower in ["address","adresse"]: rename[col] = "address"
+        elif lower in ["zip","plz"]:  rename[col] = "zip"
+        elif lower in ["city","ort"]: rename[col] = "city"
+        elif lower in ["state","bundesland"]: rename[col] = "state"
+        elif lower in ["school_type","schulart"]: rename[col] = "school_type"
+        elif lower in ["website"]:    rename[col] = "website"
+        elif lower in ["phone","telefon"]: rename[col] = "phone"
+
+    df = df.rename(columns=rename)
 
     # Bundesland-Kürzel → Vollname
     if "state" in df.columns:
         df["state"] = df["state"].map(lambda s: STATE_MAP.get(str(s).strip(), str(s).strip()))
 
-    # NaN → None (JSON-kompatibel)
-    df = df.where(pd.notnull(df), None)
-
-    # source-Flag setzen (wird beim Upsert nur für neue Zeilen geschrieben)
+    # Nur vorhandene Felder
+    fields = ["id","name","address","zip","city","state","school_type","website","phone"]
+    available = [f for f in fields if f in df.columns]
+    df = df[available].where(pd.notnull(df[available]), None)
     df["source"] = "jedeschule"
 
-    records = df.to_dict("records")
-    log.info(f"  → {len(records):,} Datensätze vorbereitet")
-    return records
+    return df, available + ["source"]
 
-# ─── Schritt 3: Upsert in Supabase ───────────────────────────────────────────
-def upsert(client: Client, records: list[dict]) -> None:
-    total   = len(records)
+def upsert(df, columns):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur  = conn.cursor()
+    total   = len(df)
     batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
     errors  = 0
 
-    log.info(f"Starte Upsert ({total:,} Zeilen, {batches} Batches à {BATCH_SIZE}) …")
+    log.info(f"Starte Upsert ({total:,} Zeilen, {batches} Batches) …")
+
+    # Update-Felder (alles außer id und source)
+    update_cols = [c for c in columns if c not in ("id", "source")]
+    update_sql  = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+
+    insert_sql = f"""
+        INSERT INTO schools ({", ".join(columns)})
+        VALUES %s
+        ON CONFLICT (id) DO UPDATE SET {update_sql}
+        WHERE schools.source != 'manual'
+    """
 
     for i in range(0, total, BATCH_SIZE):
-        batch = records[i : i + BATCH_SIZE]
-        batch_no = i // BATCH_SIZE + 1
+        batch = df.iloc[i:i+BATCH_SIZE]
+        rows  = [tuple(row) for row in batch[columns].values]
         try:
-            (
-                client.table("schools")
-                .upsert(
-                    batch,
-                    on_conflict="id",           # Konflikt auf PK
-                    # ignore_duplicates=False   # bestehende Zeilen werden aktualisiert
-                )
-                .execute()
-            )
-            log.info(f"  Batch {batch_no}/{batches} ✓  ({i+1}–{min(i+BATCH_SIZE, total)})")
+            execute_values(cur, insert_sql, rows)
+            conn.commit()
+            log.info(f"  Batch {i//BATCH_SIZE+1}/{batches} ✓")
         except Exception as e:
-            log.error(f"  Batch {batch_no}/{batches} FEHLER: {e}")
+            conn.rollback()
+            log.error(f"  Batch {i//BATCH_SIZE+1} FEHLER: {e}")
             errors += 1
+
+    cur.close()
+    conn.close()
 
     if errors:
         log.warning(f"Fertig mit {errors} Fehlern.")
@@ -121,26 +116,10 @@ def upsert(client: Client, records: list[dict]) -> None:
     else:
         log.info(f"Alle {total:,} Schulen erfolgreich importiert ✓")
 
-# ─── Schritt 4: Manuelle Einträge schützen ───────────────────────────────────
-# Supabase upsert überschreibt bestehende Zeilen.
-# Manuelle Schulen haben IDs wie "manual-<uuid>" – die kollidieren nie mit
-# jedeschule-IDs (HE-..., NW-...). Kein extra Schutz nötig, da die IDs
-# disjunkt sind. 
-#
-# Falls du trotzdem sicher gehen willst, kannst du vor dem Upsert
-# alle manuellen IDs laden und aus dem Batch herausfiltern:
-#
-# manual_ids = {r['id'] for r in client.table('schools')
-#                .select('id').eq('source','manual').execute().data}
-# records = [r for r in records if r['id'] not in manual_ids]
-
-# ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
-    client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    df      = download_csv()
-    records = transform(df)
-    upsert(client, records)
+    df = download_csv()
+    df, columns = transform(df)
+    upsert(df, columns)
 
 if __name__ == "__main__":
     main()

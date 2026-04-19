@@ -1,43 +1,33 @@
 name: 🏫 Schuldaten aktualisieren
 
 on:
-  # Jeden Montag um 04:00 Uhr UTC
   schedule:
     - cron: "0 4 * * 1"
-
-  # Manuell auslösbar (z.B. beim ersten Setup)
   workflow_dispatch:
 
 jobs:
   update-schools:
-    name: CSV importieren → Supabase
+    name: CSV importieren → Neon
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      # ── 1. Code auschecken ──────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Python Setup ─────────────────────────────────────
       - name: Python 3.11 einrichten
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      # ── 3. Abhängigkeiten installieren ──────────────────────
       - name: Pakete installieren
-        run: pip install requests supabase pandas
+        run: pip install requests pandas psycopg2-binary
 
-      # ── 4. Script ausführen ─────────────────────────────────
       - name: Schuldaten laden & importieren
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/update_schools.py
 
-      # ── 5. Ergebnis als Summary loggen ──────────────────────
       - name: Summary
         if: always()
         run: |

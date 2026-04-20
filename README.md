@@ -1,67 +1,45 @@
-# Hausaufgaben-App
+# Hausaufgaben-App v2
 
-PWA für Eltern zum gemeinsamen Hausaufgaben-Tracking.  
-Stack: **Vite + React · Supabase · Vercel · GitHub Actions**
+Eltern-Community für Schulklassen – Hausaufgaben, Termine, Klassenkasse.
+
+## Stack
+- **Vite + React** – Frontend + PWA
+- **Neon PostgreSQL** – Datenbank
+- **Neon Auth** – Authentifizierung (Magic Link + Google)
+- **Vercel** – Hosting + Serverless API Routes
+- **GitHub Actions** – Wöchentlicher Schuldaten-Import
 
 ---
 
-## Setup in 5 Schritten
+## Setup
 
-### 1. GitHub Repo anlegen
-```bash
-git init
-git add .
-git commit -m "🎉 Initial commit"
-# Neues Repo auf github.com anlegen, dann:
-git remote add origin https://github.com/DEIN-USER/hausaufgaben-app.git
-git push -u origin main
+### 1. Neon Auth einrichten
+1. Neon Dashboard → dein Projekt → **Auth** Tab
+2. Auth aktivieren
+3. `VITE_NEON_AUTH_URL` aus den Settings kopieren
+4. Optional: Google OAuth einrichten (Client ID + Secret)
+
+### 2. Schema einspielen
+Neon Dashboard → SQL Editor → `schema.sql` ausführen
+
+### 3. Vercel Environment Variables
+```
+DATABASE_URL          = dein Neon Connection String
+VITE_NEON_AUTH_URL    = deine Neon Auth URL
 ```
 
-### 2. Supabase anlegen
-1. [supabase.com](https://supabase.com) → Neues Projekt
-2. SQL Editor → Inhalt von `supabase/schema.sql` ausführen
-3. Settings → API → URL + anon key kopieren
-
-### 3. Vercel verbinden
-1. [vercel.com](https://vercel.com) → "Import Git Repository"
-2. GitHub Repo auswählen
-3. Environment Variables eintragen:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-4. Deploy → fertig ✓ (jeder Push deployt automatisch)
-
-### 4. Schuldaten importieren (GitHub Actions)
-GitHub Repo → Settings → Secrets → Actions:
-- `SUPABASE_URL` → deine Supabase URL
-- `SUPABASE_SERVICE_KEY` → service_role key (nicht den anon key!)
-
-Dann: Actions → "Schuldaten aktualisieren" → "Run workflow"
+### 4. GitHub Secret
+```
+DATABASE_URL          = dein Neon Connection String (für Schuldaten-Import)
+```
 
 ### 5. Lokal entwickeln
 ```bash
 cp .env.example .env.local
-# .env.local mit deinen Supabase-Werten füllen
+# Werte eintragen
 npm install
 npm run dev
 ```
-
----
-
-## PWA auf dem Homescreen speichern
-
-**iPhone/iPad (Safari):**  
-Teilen → "Zum Home-Bildschirm"
-
-**Android (Chrome):**  
-Menü → "App installieren"
-
----
-
-## Icons generieren
-Ersetze `public/icons/icon-192.png` und `icon-512.png`  
-mit deinen eigenen Icons (PNG mit transparentem Hintergrund).
-
-Schnell generieren mit [realfavicongenerator.net](https://realfavicongenerator.net)
 
 ---
 
@@ -69,23 +47,40 @@ Schnell generieren mit [realfavicongenerator.net](https://realfavicongenerator.n
 ```
 src/
   pages/
-    Onboarding.jsx   ← Einladung, Name, Schule, Datenschutz
-    Feed.jsx         ← Haupt-Feed mit Eintragen, Bestätigen, Kommentieren
+    Login.jsx      ← Magic Link + Google Login
+    Join.jsx       ← Schule suchen → Klasse → Kinder
+    Feed.jsx       ← Hausaufgaben-Feed (multi-child)
   lib/
-    supabase.js      ← Supabase Client + Schulsuche
-    schoolLogic.js   ← Kurs-System Matrix (Hessen, NRW, etc.)
-  App.jsx            ← Router (Onboarding ↔ Feed)
-  main.jsx           ← Entry Point + PWA Service Worker
-supabase/
-  schema.sql         ← DB Schema + RLS + Volltextsuche
-scripts/
-  update_schools.py  ← Weekly CSV Import (jedeschule → Supabase)
-.github/workflows/
-  update-schools.yml ← GitHub Action (jeden Montag 04:00)
+    auth.js        ← Neon Auth Client
+    db.js          ← Alle API-Calls
+    schoolLogic.js ← Kurssystem-Matrix
+  App.jsx          ← Router + Auth-State
+
+api/
+  _db.js           ← Geteilter Neon-Client
+  groups.js        ← GET Gruppen einer Schule
+  groups/join.js   ← POST Gruppe beitreten/anlegen
+  entries.js       ← GET/POST Einträge
+  entries/confirm.js ← POST Bestätigung toggle
+  entries/comments.js ← GET/POST Kommentare
+  events.js        ← GET/POST Termine
+  funds.js         ← GET/POST Klassenkasse
+  schools.js       ← GET Schulsuche
+  schools-manual.js ← POST Manuelle Schule
+
+schema.sql         ← Komplettes DB-Schema
 ```
 
-## Nächste Schritte (nach erfolgreichem Launch)
-- [ ] Supabase Auth für echte Nutzerkonten
-- [ ] Push-Benachrichtigungen (Web Push API)
-- [ ] Gruppen-System mit Einladungslinks
-- [ ] Capacitor → iOS App Store + Google Play
+---
+
+## Features
+- 🔐 Magic Link Login (kein Passwort)
+- 🏫 33.000 Schulen durchsuchbar
+- 👨‍👩‍👧 Mehrere Kinder pro Elternteil
+- 📚 Hausaufgaben mit Kurssystem (A/B/C, E/G)
+- ✅ Community-Bestätigung
+- 💬 Kommentare
+- 📅 Events & Termine
+- 💰 Klassenkasse (Tracking wer zahlt)
+- 🔥 Streaks
+- 📱 PWA – auf Homescreen speicherbar

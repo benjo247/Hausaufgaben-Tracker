@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { authClient, getCurrentUser } from "./lib/auth.js";
-import Login   from "./pages/Login.jsx";
-import Join    from "./pages/Join.jsx";
-import Feed    from "./pages/Feed.jsx";
+import Login from "./pages/Login.jsx";
+import Join  from "./pages/Join.jsx";
+import Feed  from "./pages/Feed.jsx";
+
+const authClient = { getSession: async () => ({ data: null }) };
+const getCurrentUser = async () => null;
 
 export default function App() {
   const [user, setUser]         = useState(undefined);
